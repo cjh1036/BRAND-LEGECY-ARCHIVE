@@ -270,6 +270,17 @@
     position:absolute;left:0;top:50%;transform:translateY(-50%);
     color:var(--ink-soft);font-size:16px;
   }
+  .filter-selects{display:flex;gap:14px;flex-wrap:wrap;}
+  .filter-selects select{
+    background:none;
+    border:none;border-bottom:1px solid var(--line);
+    padding:6px 18px 6px 0;
+    font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-soft);
+    cursor:pointer;
+  }
+  .filter-selects select:focus{outline:none;border-color:var(--ink);}
+  .filter-selects select.active{color:var(--ink);border-color:var(--ink);}
   .breadcrumb{
     font-size:10.5px;
     letter-spacing:.14em;
@@ -528,6 +539,10 @@
     <div class="topbar">
       <div class="search-wrap">
         <input type="text" id="searchInput" placeholder="제목 · 출처 · 요약 검색" />
+      </div>
+      <div class="filter-selects">
+        <select id="filterBrand"><option value="">전체 브랜드</option></select>
+        <select id="filterSource"><option value="">전체 매체</option></select>
       </div>
     </div>
     <div id="content"></div>
@@ -865,8 +880,23 @@ let state = {
   expandedBrands: new Set(),
   expandedYears: new Set(),
   searchQuery: '',
+  filterBrandId: '',
+  filterSource: '',
   editingEntryId: null,
 };
+
+function clearSearch(){
+  state.searchQuery = '';
+  state.filterBrandId = '';
+  state.filterSource = '';
+  const si = document.getElementById('searchInput'); if(si) si.value='';
+  const fb = document.getElementById('filterBrand'); if(fb) fb.value='';
+  const fs = document.getElementById('filterSource'); if(fs) fs.value='';
+}
+
+function isSearchActive(){
+  return !!(state.searchQuery.trim() || state.filterBrandId || state.filterSource);
+}
 
 function uid(prefix){
   return prefix + '-' + Math.random().toString(36).slice(2,9);
@@ -1027,7 +1057,7 @@ function renderTree(){
         state.expandedBrands.add(brand.id);
       }
       state.selection = {brandId:brand.id, seasonId:null, categoryId:null};
-      state.searchQuery=''; document.getElementById('searchInput').value='';
+      clearSearch();
       render();
     };
     block.appendChild(bNode);
@@ -1073,7 +1103,7 @@ function renderTree(){
           }else{
             setExpandedSeason(season.id);
           }
-          state.searchQuery=''; document.getElementById('searchInput').value='';
+          clearSearch();
           render();
         };
         li.appendChild(sNode);
@@ -1089,7 +1119,7 @@ function renderTree(){
             cNode.innerHTML = `<span class="caret spacer">▸</span><span class="node-dot"></span><span class="node-label">${escapeHtml(cat.name)}</span><span class="count">${cat.entries.length}</span>`;
             cNode.onclick = ()=>{
               state.selection = {brandId:brand.id, seasonId:season.id, categoryId:cat.id};
-              state.searchQuery=''; document.getElementById('searchInput').value='';
+              clearSearch();
               render();
             };
             cli.appendChild(cNode);
@@ -1168,12 +1198,41 @@ function renderEntryCard(entry, refLabel){
   return div;
 }
 
+function populateFilterSelects(){
+  const brandSel = document.getElementById('filterBrand');
+  const sourceSel = document.getElementById('filterSource');
+  if(!brandSel || !sourceSel || !state.data) return;
+
+  brandSel.innerHTML = '<option value="">전체 브랜드</option>';
+  state.data.brands.forEach(b=>{
+    const opt = document.createElement('option');
+    opt.value = b.id; opt.textContent = b.name;
+    brandSel.appendChild(opt);
+  });
+  brandSel.value = state.filterBrandId;
+  brandSel.classList.toggle('active', !!state.filterBrandId);
+
+  const sources = new Set();
+  state.data.brands.forEach(b=>b.seasons.forEach(s=>s.categories.forEach(c=>c.entries.forEach(e=>{
+    if(e.source) sources.add(e.source);
+  }))));
+  sourceSel.innerHTML = '<option value="">전체 매체</option>';
+  [...sources].sort((a,b)=>a.localeCompare(b)).forEach(src=>{
+    const opt = document.createElement('option');
+    opt.value = src; opt.textContent = src;
+    sourceSel.appendChild(opt);
+  });
+  sourceSel.value = state.filterSource;
+  sourceSel.classList.toggle('active', !!state.filterSource);
+}
+
 function render(){
   renderTree();
+  populateFilterSelects();
   const content = document.getElementById('content');
   content.innerHTML = '';
 
-  if(state.searchQuery.trim()){
+  if(isSearchActive()){
     renderSearchResults(content);
     return;
   }
@@ -1330,11 +1389,13 @@ function renderSearchResults(content){
   const q = state.searchQuery.trim().toLowerCase();
   const results = [];
   state.data.brands.forEach(brand=>{
+    if(state.filterBrandId && brand.id!==state.filterBrandId) return;
     brand.seasons.forEach(season=>{
       season.categories.forEach(cat=>{
         cat.entries.forEach(entry=>{
+          if(state.filterSource && entry.source!==state.filterSource) return;
           const hay = [entry.title, entry.summary, entry.source].join(' ').toLowerCase();
-          if(hay.includes(q)){
+          if(!q || hay.includes(q)){
             results.push({brand, season, cat, entry});
           }
         });
@@ -1342,9 +1403,13 @@ function renderSearchResults(content){
     });
   });
 
+  const noteParts = [];
+  if(q) noteParts.push(`"${state.searchQuery}"`);
+  if(state.filterBrandId){ const b=findBrand(state.filterBrandId); if(b) noteParts.push(b.name); }
+  if(state.filterSource) noteParts.push(state.filterSource);
   const note = document.createElement('p');
   note.className = 'search-results-note';
-  note.textContent = `"${state.searchQuery}" 검색 결과 ${results.length}건`;
+  note.textContent = `${noteParts.join(' · ')} 검색 결과 ${results.length}건`;
   content.appendChild(note);
 
   if(!results.length){
@@ -2389,6 +2454,15 @@ function wireEvents(){
       state.searchQuery = e.target.value;
       render();
     }, 120);
+  });
+
+  document.getElementById('filterBrand').addEventListener('change', e=>{
+    state.filterBrandId = e.target.value;
+    render();
+  });
+  document.getElementById('filterSource').addEventListener('change', e=>{
+    state.filterSource = e.target.value;
+    render();
   });
 
   document.addEventListener('keydown', e=>{
