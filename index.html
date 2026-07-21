@@ -542,7 +542,7 @@
       </div>
       <div class="filter-selects">
         <select id="filterBrand"><option value="">전체 브랜드</option></select>
-        <select id="filterSource"><option value="">전체 매체</option></select>
+        <select id="filterSeason"><option value="">전체 시즌</option></select>
       </div>
     </div>
     <div id="content"></div>
@@ -881,21 +881,21 @@ let state = {
   expandedYears: new Set(),
   searchQuery: '',
   filterBrandId: '',
-  filterSource: '',
+  filterSeason: '',
   editingEntryId: null,
 };
 
 function clearSearch(){
   state.searchQuery = '';
   state.filterBrandId = '';
-  state.filterSource = '';
+  state.filterSeason = '';
   const si = document.getElementById('searchInput'); if(si) si.value='';
   const fb = document.getElementById('filterBrand'); if(fb) fb.value='';
-  const fs = document.getElementById('filterSource'); if(fs) fs.value='';
+  const fs = document.getElementById('filterSeason'); if(fs) fs.value='';
 }
 
 function isSearchActive(){
-  return !!(state.searchQuery.trim() || state.filterBrandId || state.filterSource);
+  return !!(state.searchQuery.trim() || state.filterBrandId || state.filterSeason);
 }
 
 function uid(prefix){
@@ -1200,8 +1200,8 @@ function renderEntryCard(entry, refLabel){
 
 function populateFilterSelects(){
   const brandSel = document.getElementById('filterBrand');
-  const sourceSel = document.getElementById('filterSource');
-  if(!brandSel || !sourceSel || !state.data) return;
+  const seasonSel = document.getElementById('filterSeason');
+  if(!brandSel || !seasonSel || !state.data) return;
 
   brandSel.innerHTML = '<option value="">전체 브랜드</option>';
   state.data.brands.forEach(b=>{
@@ -1212,18 +1212,18 @@ function populateFilterSelects(){
   brandSel.value = state.filterBrandId;
   brandSel.classList.toggle('active', !!state.filterBrandId);
 
-  const sources = new Set();
-  state.data.brands.forEach(b=>b.seasons.forEach(s=>s.categories.forEach(c=>c.entries.forEach(e=>{
-    if(e.source) sources.add(e.source);
-  }))));
-  sourceSel.innerHTML = '<option value="">전체 매체</option>';
-  [...sources].sort((a,b)=>a.localeCompare(b)).forEach(src=>{
+  const brandsForSeasons = state.filterBrandId ? state.data.brands.filter(b=>b.id===state.filterBrandId) : state.data.brands;
+  const seasonCodes = new Map();
+  brandsForSeasons.forEach(b=>b.seasons.forEach(s=>{ if(s.code) seasonCodes.set(s.code, {code:s.code}); }));
+  const sortedSeasons = [...seasonCodes.values()].sort(compareSeasons);
+  seasonSel.innerHTML = '<option value="">전체 시즌</option>';
+  sortedSeasons.forEach(s=>{
     const opt = document.createElement('option');
-    opt.value = src; opt.textContent = src;
-    sourceSel.appendChild(opt);
+    opt.value = s.code; opt.textContent = s.code;
+    seasonSel.appendChild(opt);
   });
-  sourceSel.value = state.filterSource;
-  sourceSel.classList.toggle('active', !!state.filterSource);
+  seasonSel.value = state.filterSeason;
+  seasonSel.classList.toggle('active', !!state.filterSeason);
 }
 
 function render(){
@@ -1391,9 +1391,9 @@ function renderSearchResults(content){
   state.data.brands.forEach(brand=>{
     if(state.filterBrandId && brand.id!==state.filterBrandId) return;
     brand.seasons.forEach(season=>{
+      if(state.filterSeason && season.code!==state.filterSeason) return;
       season.categories.forEach(cat=>{
         cat.entries.forEach(entry=>{
-          if(state.filterSource && entry.source!==state.filterSource) return;
           const hay = [entry.title, entry.summary, entry.source].join(' ').toLowerCase();
           if(!q || hay.includes(q)){
             results.push({brand, season, cat, entry});
@@ -1406,7 +1406,7 @@ function renderSearchResults(content){
   const noteParts = [];
   if(q) noteParts.push(`"${state.searchQuery}"`);
   if(state.filterBrandId){ const b=findBrand(state.filterBrandId); if(b) noteParts.push(b.name); }
-  if(state.filterSource) noteParts.push(state.filterSource);
+  if(state.filterSeason) noteParts.push(state.filterSeason);
   const note = document.createElement('p');
   note.className = 'search-results-note';
   note.textContent = `${noteParts.join(' · ')} 검색 결과 ${results.length}건`;
@@ -2458,10 +2458,11 @@ function wireEvents(){
 
   document.getElementById('filterBrand').addEventListener('change', e=>{
     state.filterBrandId = e.target.value;
+    state.filterSeason = '';
     render();
   });
-  document.getElementById('filterSource').addEventListener('change', e=>{
-    state.filterSource = e.target.value;
+  document.getElementById('filterSeason').addEventListener('change', e=>{
+    state.filterSeason = e.target.value;
     render();
   });
 
